@@ -1,5 +1,3 @@
-"""Typed API client for Feedz FastAPI backend."""
-
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 async function request(path, options = {}) {
