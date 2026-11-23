@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ground: #101820;
+  --surface: #18232E;
+  --raised: #20303E;
+  --line: #2C3E4E;
+  --ink: #E9EEF3;
+  --ink2: #93A6B6;
+  --ink3: #61758A;
+  --bull: #3FBF9A;
+  --bear: #D1524F;
+  --flat: #7E93A5;
+  --expo: #F0B429;
+}
