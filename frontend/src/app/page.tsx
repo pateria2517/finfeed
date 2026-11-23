@@ -19,6 +19,23 @@ export default function FeedzGlassyPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const storedTheme = window.localStorage.getItem("feedz-theme");
+    if (storedTheme === "light" || storedTheme === "dark") {
+      setTheme(storedTheme);
+    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      setTheme("dark");
+    }
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.dataset.theme = theme;
+    root.style.colorScheme = theme;
+    window.localStorage.setItem("feedz-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
     (async () => {
       try {
         setError(null);
