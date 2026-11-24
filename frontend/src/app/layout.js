@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Feedz — Hyper-Personal Financial Intelligence",
+  title: "Feedz | Hyper-Personal Financial Intelligence",
   description: "Portfolio-aware financial news intelligence with SEBI-guarded AI analysis.",
 };
 

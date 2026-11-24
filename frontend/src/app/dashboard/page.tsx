@@ -1,5 +1,5 @@
-import GlassyDashboardDemo from "@/components/ui/demo";
+import { redirect } from "next/navigation";
 
 export default function DashboardPage() {
-  return <GlassyDashboardDemo workspaceName="Feedz" />;
+  redirect("/");
 }

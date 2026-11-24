@@ -12,10 +12,10 @@ class PersonaVector(BaseModel):
 
 
 class HoldingInput(BaseModel):
-    symbol: str
-    weight: float = Field(..., gt=0)
-    quantity: Optional[float] = None
-    avg_price: Optional[float] = None
+    symbol: str = Field(..., min_length=1, max_length=30)
+    weight: float = Field(..., gt=0, le=100)
+    quantity: Optional[float] = Field(default=None, ge=0, le=1e12)
+    avg_price: Optional[float] = Field(default=None, ge=0, le=1e12)
     client_id: Optional[str] = None  # For P2 MFD client-book mode
 
 
@@ -30,7 +30,13 @@ class OnboardingRequest(BaseModel):
 
 class AuthLoginRequest(BaseModel):
     identifier: str  # phone or email
-    channel: Literal["otp", "magic_link"] = "otp"
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class AuthRegisterRequest(BaseModel):
+    identifier: str = Field(..., min_length=3, max_length=320)
+    password: str = Field(..., min_length=8, max_length=128)
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class SentimentScore(BaseModel):
@@ -129,7 +135,7 @@ class BriefRequest(BaseModel):
 
 class AskRequest(BaseModel):
     user_id: str = "default_user"
-    question: str
+    question: str = Field(..., min_length=1, max_length=500)
 
 
 class FeedbackRequest(BaseModel):

@@ -1,247 +1,599 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import {
+  BarChart3,
+  BriefcaseBusiness,
+  LayoutDashboard,
+  LogOut,
+  Search,
+  TrendingUp,
+  Upload,
+} from "lucide-react";
 import { feedzApi } from "../lib/api";
-import { Bell, BarChart3, BriefcaseBusiness, LayoutDashboard, Moon, Sun, TrendingUp } from "lucide-react";
 
-const studioPhoto = "https://cdn.21st.dev/assets/mirror/ea/ea9270b3b7246283219ac52fa77a1213e9d1efb285d76348d3620609ba6cefa7.jpg";
+const heroPhoto =
+  "https://cdn.21st.dev/assets/mirror/ea/ea9270b3b7246283219ac52fa77a1213e9d1efb285d76348d3620609ba6cefa7.jpg";
 
-export default function FeedzGlassyPage() {
-  const [userId, setUserId] = useState("investor_a");
-  const [tab, setTab] = useState<"feed" | "mood" | "portfolio" | "brief">("feed");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+type Tab = "feed" | "mood" | "portfolio" | "brief";
+
+export default function FeedzPage() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [tab, setTab] = useState<Tab>("feed");
   const [feedData, setFeedData] = useState<any>(null);
   const [mood, setMood] = useState<any>(null);
+  const [me, setMe] = useState<any>(null);
   const [brief, setBrief] = useState<any>(null);
   const [whyMap, setWhyMap] = useState<Record<number, string>>({});
   const [askQ, setAskQ] = useState("");
   const [askRes, setAskRes] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [instrumentQuery, setInstrumentQuery] = useState("");
+  const [instrumentResults, setInstrumentResults] = useState<any[]>([]);
+  const [portfolioWeight, setPortfolioWeight] = useState("10");
+  const [taxonomy, setTaxonomy] = useState<any>(null);
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem("feedz-theme");
-    if (storedTheme === "light" || storedTheme === "dark") {
-      setTheme(storedTheme);
-    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      setTheme("dark");
+    const token = window.localStorage.getItem("feedz-access-token");
+    if (!token) {
+      setCheckingSession(false);
+      return;
     }
+    feedzApi
+      .getMe()
+      .then((user) => {
+        setMe(user);
+        setAuthenticated(true);
+      })
+      .catch(() => window.localStorage.removeItem("feedz-access-token"))
+      .finally(() => setCheckingSession(false));
   }, []);
 
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-    root.dataset.theme = theme;
-    root.style.colorScheme = theme;
-    window.localStorage.setItem("feedz-theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setError(null);
-        const [f, m] = await Promise.all([feedzApi.getFeed(userId), feedzApi.getMarketMood()]);
-        setFeedData(f);
-        setMood(m);
+    if (!authenticated) return;
+    setError(null);
+    Promise.all([feedzApi.getMe(), feedzApi.getFeed(), feedzApi.getMarketMood(), feedzApi.getTaxonomy()])
+      .then(([user, feed, marketMood, taxonomyData]) => {
+        setMe(user);
+        setFeedData(feed);
+        setMood(marketMood);
+        setTaxonomy(taxonomyData);
         setBrief(null);
         setWhyMap({});
-      } catch (e: any) {
-        setError(e.message);
-      }
-    })();
-  }, [userId]);
+      })
+      .catch((err: Error) => setError(err.message));
+  }, [authenticated]);
 
-  const handleWhy = async (id: number) => {
-    const res = await feedzApi.whyThisMatters(userId, id);
-    setWhyMap((p) => ({ ...p, [id]: res.insight }));
+  const submitAuth = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      setError(null);
+      const result =
+        authMode === "register"
+          ? await feedzApi.register(identifier, password, name)
+          : await feedzApi.login(identifier, password);
+      window.localStorage.setItem("feedz-access-token", result.access_token);
+      setMe(result.user);
+      setAuthenticated(true);
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
-  const handleBrief = async () => setBrief(await feedzApi.dailyBrief(userId));
+  const logout = () => {
+    window.localStorage.removeItem("feedz-access-token");
+    setAuthenticated(false);
+    setFeedData(null);
+    setMood(null);
+    setMe(null);
+  };
 
-  const handleAsk = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleWhy = async (articleId: number) => {
+    try {
+      setError(null);
+      const response = await feedzApi.whyThisMatters(articleId);
+      setWhyMap((current) => ({ ...current, [articleId]: response.insight }));
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleFeedback = async (articleId: number, vote: "up" | "down") => {
+    try {
+      await feedzApi.recordFeedback(articleId, vote);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleBrief = async () => {
+    try {
+      setError(null);
+      setBrief(await feedzApi.dailyBrief());
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleAsk = async (event: FormEvent) => {
+    event.preventDefault();
     if (!askQ.trim()) return;
-    setAskRes(await feedzApi.askFeed(userId, askQ));
+    try {
+      setError(null);
+      setAskRes(await feedzApi.askFeed(askQ));
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
-  const nav = [
-    { id: "feed", label: "Feed", icon: LayoutDashboard },
-    { id: "mood", label: "Market Mood", icon: TrendingUp },
-    { id: "portfolio", label: "Portfolio", icon: BarChart3 },
-    { id: "brief", label: "Brief & Ask", icon: BriefcaseBusiness },
-  ] as const;
+  const searchInstruments = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!instrumentQuery.trim()) return;
+    try {
+      setError(null);
+      const response = await feedzApi.searchInstruments(instrumentQuery);
+      setInstrumentResults(response.results || []);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
 
-  return (
-    <div
-      className="min-h-screen relative isolate font-sans text-[13px]"
-      style={{
-        background: theme === "dark" ? "#40322b" : "#ab8e76",
-        color: theme === "dark" ? "#fff6e9" : "#25201e",
-      } as CSSProperties}
-    >
-      <img
-        src={studioPhoto}
-        alt=""
-        aria-hidden="true"
-        className="fixed inset-0 w-full h-full object-cover -z-20 pointer-events-none"
-        style={{ filter: theme === "dark" ? "sepia(.15) saturate(.75) brightness(.61)" : "sepia(.22) saturate(.78) brightness(.86)" }}
-      />
-      <div className="max-w-[1340px] mx-auto px-4 md:px-10 py-5 pb-24">
-        <header className="grid grid-cols-[1fr_auto] items-center gap-3 min-h-[58px] rounded-full px-3 py-1.5 border border-white/40 backdrop-blur-xl bg-white/30 dark:bg-black/30 shadow-lg">
-          <div className="flex items-center gap-2.5 pl-1">
-            <span className="w-9 h-9 rounded-full grid place-items-center bg-[#fff9f3] text-[#241b17] font-extrabold text-sm shadow">Fz</span>
+  const addHolding = async (symbol: string) => {
+    const weight = Number(portfolioWeight);
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) {
+      setError("Weight must be greater than zero and no more than 100.");
+      return;
+    }
+    try {
+      setError(null);
+      await feedzApi.addHolding({ symbol, weight });
+      const [user, feed] = await Promise.all([feedzApi.getMe(), feedzApi.getFeed()]);
+      setMe(user);
+      setFeedData(feed);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const importCsv = async (file?: File) => {
+    if (!file) return;
+    try {
+      setError(null);
+      await feedzApi.importCsv(file);
+      const [user, feed] = await Promise.all([feedzApi.getMe(), feedzApi.getFeed()]);
+      setMe(user);
+      setFeedData(feed);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const savePreferences = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!me) return;
+    try {
+      setError(null);
+      const interests: Record<string, number> = {};
+      const form = new FormData(event.currentTarget as HTMLFormElement);
+      taxonomyTopics.forEach((topic: string) => {
+        if (form.has(`topic-${topic}`)) interests[topic] = 1;
+      });
+      const result = await feedzApi.saveOnboarding({
+        name: me.name,
+        mode: me.mode || "P1_RETAIL",
+        persona: me.persona,
+        interests,
+        holdings: (me.holdings || []).map((holding: any) => ({
+          symbol: holding.s,
+          weight: holding.w,
+          quantity: holding.qty,
+          avg_price: holding.avg_price,
+        })),
+      });
+      setMe(result.profile);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  if (checkingSession) {
+    return <main className="landing-shell" aria-label="Loading Feedz" />;
+  }
+
+  const taxonomyTopics =
+    taxonomy?.taxonomy?.flatMap((group: any) => group.children || [group.label]) || [];
+
+  if (!authenticated) {
+    return (
+      <main className="landing-shell">
+        <nav className="landing-nav" aria-label="Primary navigation">
+          <div className="brand-mark">
+            <span className="brand-glyph">FZ</span>
+            <span>FEEDZ</span>
+          </div>
+          <div className="nav-links">
+            <a href="#features">Intelligence</a>
+            <a href="#process">How it works</a>
+            <a href="#account">Account</a>
+          </div>
+        </nav>
+
+        <section className="hero enter-reveal">
+          <div className="hero-copy">
+            <div className="hero-kicker">FINANCIAL INTELLIGENCE FOR PEOPLE WHO HOLD</div>
             <div>
-              <strong className="block text-xs tracking-[0.17em] font-extrabold">FEEDZ</strong>
-              <small className="block text-[10px] opacity-75">Financial Intelligence</small>
+              <h1>Read what moves your money.</h1>
+              <p className="hero-subcopy">
+                Live market context shaped around your portfolio, interests, and point of view.
+              </p>
+              <a className="primary-button" href="#account">
+                Open your feed
+              </a>
             </div>
           </div>
-          <div className="flex items-center justify-end gap-2">
-            <select
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              className="h-9 rounded-full px-3 text-xs font-semibold bg-white/40 text-[#25201e] border border-black/15"
-            >
-              <option value="investor_a">Investor A (P1)</option>
-              <option value="investor_b">Investor B (P1)</option>
-              <option value="mfd_advisor">Lark MFD (P2)</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              className="w-10 h-10 rounded-full grid place-items-center border border-black/15 bg-white/30"
-              aria-label="Toggle theme"
-            >
-              {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab("mood")}
-              className="w-10 h-10 rounded-full grid place-items-center border border-black/15 bg-white/40"
-              aria-label="Market Mood"
-            >
-              <Bell className="w-4 h-4" />
-            </button>
+          <div className="hero-media">
+            <img src={heroPhoto} alt="Editorial view of a modern investment workspace" />
+            <div className="media-caption">
+              <span>01 / SIGNAL</span>
+              <span>Less noise. Better context.</span>
+            </div>
           </div>
-        </header>
+        </section>
 
-        <div className="relative mt-3">
-          <main className="rounded-[32px] border border-white/40 backdrop-blur-md bg-[#f7eadb]/35 dark:bg-[#2a1f1d]/55 shadow-2xl p-5 md:p-9 min-h-[600px]">
-            {error && <div className="p-3 mb-4 rounded-xl bg-red-500/20 border border-red-500/40 text-xs">{error}</div>}
-
-            {tab === "feed" && feedData && (
-              <div className="space-y-4">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Ranked by what it touches</h1>
-                    <p className="text-xs opacity-75 mt-1">{feedData.count} stories · {feedData.mode}</p>
-                  </div>
-                  {mood && (
-                    <div className="px-4 py-2 rounded-2xl bg-[#1e7461] text-white text-right shadow">
-                      <div className="text-[10px] uppercase tracking-wider opacity-80">Market Mood</div>
-                      <div className="text-xl font-extrabold">{mood.index} / 100</div>
-                    </div>
-                  )}
-                </div>
-                <div className="grid gap-3">
-                  {feedData.items.map((item: any) => (
-                    <article key={item.id} className="flex gap-3 rounded-2xl border border-white/45 bg-white/45 dark:bg-black/30 p-4 shadow-sm">
-                      <div className="w-1.5 rounded-full bg-black/10 relative overflow-hidden flex-none">
-                        <div className="absolute bottom-0 left-0 right-0 bg-[#09644f]" style={{ height: `${Math.min(100, Math.max(item.exposure_pct > 0 ? 12 : 0, item.exposure_pct * 100))}%` }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] opacity-75 mb-1">
-                          <span className="uppercase font-bold px-2 py-0.5 rounded-full bg-black/10">{item.source_category}</span>
-                          <span>{item.source_name}</span>
-                          {item.exposure_pct > 0 && (
-                            <span className="px-2 py-0.5 rounded-full bg-[#09644f]/15 text-[#09644f] dark:text-[#75dac0] font-bold">
-                              {Math.round(item.exposure_pct * 100)}% of portfolio
-                            </span>
-                          )}
-                          <span className="ml-auto font-mono font-bold">{item.sentiment.polarity.toFixed(2)}</span>
-                        </div>
-                        <h2 className="text-base font-bold">{item.headline}</h2>
-                        <p className="text-xs opacity-80 mt-1">{item.summary}</p>
-                        <button onClick={() => handleWhy(item.id)} className="mt-2.5 px-3 py-1.5 rounded-full bg-[#261e1b] text-[#fffaf5] text-[11px] font-bold">
-                          Why this matters to me
-                        </button>
-                        {whyMap[item.id] && <div className="mt-2.5 p-3 rounded-xl bg-white/60 dark:bg-black/35 border border-black/10 text-xs">{whyMap[item.id]}</div>}
-                      </div>
-                    </article>
+        <section id="features" className="feature-section">
+          <div className="feature-inner">
+            <div className="feature-head">
+              <h2>Your portfolio has a point of view.</h2>
+              <p>
+                Feedz ranks public news by relevance, market evidence, and the holdings you choose.
+              </p>
+            </div>
+            <div className="feature-grid">
+              <article className="feature-cell">
+                <h3>One signal feed, ranked for you.</h3>
+                <div className="signal-line" aria-hidden="true">
+                  {[34, 54, 42, 76, 62, 92, 70, 48].map((height, index) => (
+                    <i key={index} style={{ height: `${height}%` }} />
                   ))}
                 </div>
-              </div>
-            )}
+              </article>
+              <article className="feature-cell">
+                <h3>Market mood.</h3>
+                <p>Track the direction of current public market signals.</p>
+              </article>
+              <article className="feature-cell">
+                <h3>Plain-language context.</h3>
+                <p>Ask how a story connects to the assets you hold.</p>
+              </article>
+            </div>
+          </div>
+        </section>
 
-            {tab === "mood" && mood && (
-              <div className="space-y-4">
-                <h1 className="text-3xl font-extrabold tracking-tight">Market Mood: {mood.index} / 100</h1>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    ["Polarity (40%)", ((mood.polarity + 1) * 50).toFixed(0)],
-                    ["Breadth (25%)", `${(mood.breadth * 100).toFixed(0)}%`],
-                    ["Momentum (20%)", `${(mood.momentum * 100).toFixed(0)}%`],
-                    ["Dispersion (15%)", `${(mood.dispersion * 100).toFixed(0)}%`],
-                  ].map(([k, v], i) => (
-                    <div key={k} className={`rounded-2xl p-4 border border-white/40 ${i === 0 ? "bg-[#1e7461] text-white" : "bg-white/45 dark:bg-black/30"}`}>
-                      <div className="text-xs opacity-80">{k}</div>
-                      <div className="text-2xl font-extrabold mt-1">{v}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        <section id="process" className="process-section">
+          <div className="process-inner">
+            <h2>From headline to context.</h2>
+            <div className="process-list">
+              <article className="process-item">
+                <strong>01</strong>
+                <h3>Set your account</h3>
+                <p>Create a private account and choose how you read the market.</p>
+              </article>
+              <article className="process-item">
+                <strong>02</strong>
+                <h3>Add holdings</h3>
+                <p>Search instruments manually or import a portfolio CSV.</p>
+              </article>
+              <article className="process-item">
+                <strong>03</strong>
+                <h3>Read with context</h3>
+                <p>Get ranked public news, mood, briefs, and guarded AI answers.</p>
+              </article>
+            </div>
+          </div>
+        </section>
 
-            {tab === "portfolio" && feedData?.portfolio_mood && (
-              <div className="space-y-4">
-                <h1 className="text-3xl font-extrabold tracking-tight">Portfolio Sentiment: {feedData.portfolio_mood.score.toFixed(2)}</h1>
-                <div className="grid gap-2">
-                  {feedData.portfolio_mood.breakdown.map((b: any) => (
-                    <div key={b.symbol} className="flex justify-between rounded-2xl border border-white/40 bg-white/45 dark:bg-black/30 p-3.5 text-xs font-semibold">
-                      <span>{b.name} ({b.weight_pct}%)</span>
-                      <span className="font-mono">{b.score.toFixed(2)} · {b.contributors_count} stories</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {tab === "brief" && (
-              <div className="space-y-5">
-                <h1 className="text-3xl font-extrabold tracking-tight">Morning Brief & Ask Feedz</h1>
-                <button onClick={handleBrief} className="px-4 py-2 rounded-full bg-[#261e1b] text-[#fffaf5] text-xs font-bold">
-                  Generate Morning Brief
+        <section id="account" className="account-section">
+          <div className="account-inner">
+            <form className="auth-card" onSubmit={submitAuth}>
+              <div className="auth-tabs" role="tablist" aria-label="Account access">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === "login"}
+                  className={`auth-tab ${authMode === "login" ? "active" : ""}`}
+                  onClick={() => {
+                    setAuthMode("login");
+                    setError(null);
+                  }}
+                >
+                  Sign in
                 </button>
-                {brief && (
-                  <div className="rounded-2xl border border-white/40 bg-white/50 dark:bg-black/35 p-5 space-y-3">
-                    <div className="text-base font-bold">{brief.line}</div>
-                    <div className="text-xs opacity-80">{brief.divergence}</div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={authMode === "register"}
+                  className={`auth-tab ${authMode === "register" ? "active" : ""}`}
+                  onClick={() => {
+                    setAuthMode("register");
+                    setError(null);
+                  }}
+                >
+                  Create account
+                </button>
+              </div>
+              {authMode === "register" && (
+                <div className="auth-field">
+                  <label htmlFor="name">Name</label>
+                  <input id="name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={100} />
+                </div>
+              )}
+              <div className="auth-field">
+                <label htmlFor="identifier">Email or phone</label>
+                <input
+                  id="identifier"
+                  value={identifier}
+                  onChange={(event) => setIdentifier(event.target.value)}
+                  required
+                  minLength={3}
+                  maxLength={320}
+                  autoComplete="username"
+                />
+              </div>
+              <div className="auth-field">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                />
+              </div>
+              {error && <p className="auth-error" role="alert">{error}</p>}
+              <button type="submit" className="primary-button">
+                {authMode === "login" ? "Sign in" : "Create account"}
+              </button>
+            </form>
+            <div className="account-copy">
+              <h2>Build your own market lens.</h2>
+              <p>
+                Your account keeps your holdings and preferences private. News ingestion is limited to configured public sources.
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const nav = [
+    { id: "feed" as const, label: "Feed", icon: LayoutDashboard },
+    { id: "mood" as const, label: "Market Mood", icon: TrendingUp },
+    { id: "portfolio" as const, label: "Portfolio", icon: BarChart3 },
+    { id: "brief" as const, label: "Brief and Ask", icon: BriefcaseBusiness },
+  ];
+
+  return (
+    <main className="app-shell">
+      <header className="app-nav">
+        <div className="brand-mark">
+          <span className="brand-glyph">FZ</span>
+          <span>FEEDZ</span>
+        </div>
+        <div className="app-nav-actions">
+          <button className="icon-button" type="button" aria-label="Log out" onClick={logout}>
+            <LogOut size={18} />
+          </button>
+        </div>
+      </header>
+
+      <div className="app-layout">
+        <nav className="app-rail" aria-label="App sections">
+          {nav.map(({ id, label, icon: Icon }) => (
+            <button
+              type="button"
+              key={id}
+              className={tab === id ? "active" : ""}
+              onClick={() => setTab(id)}
+              aria-current={tab === id ? "page" : undefined}
+            >
+              <Icon size={17} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <section className="app-main enter-reveal" key={tab}>
+          {error && <div className="app-error" role="alert">{error}</div>}
+
+          {tab === "feed" && feedData && (
+            <>
+              <div className="app-heading">
+                <h1>Ranked by what it touches.</h1>
+                {mood && (
+                  <div className="mood-chip">
+                    <span>Market mood</span>
+                    <strong>{mood.index}</strong>
                   </div>
                 )}
-                <form onSubmit={handleAsk} className="flex gap-2">
-                  <input value={askQ} onChange={(e) => setAskQ(e.target.value)} placeholder="Ask about your portfolio and feed..." className="flex-1 rounded-full px-4 py-2 text-xs bg-white/60 text-[#25201e] border border-black/15" />
-                  <button type="submit" className="px-4 py-2 rounded-full bg-[#261e1b] text-[#fffaf5] text-xs font-bold">Ask</button>
-                </form>
-                {askRes && <div className="rounded-2xl border border-white/40 bg-white/50 dark:bg-black/35 p-4 text-xs">{askRes.answer}</div>}
               </div>
-            )}
-          </main>
+              <div className="story-list">
+                {feedData.items.map((item: any, index: number) => (
+                  <article className="story-card" key={item.id}>
+                    <span className="story-index">{String(index + 1).padStart(2, "0")}</span>
+                    <div>
+                      <h2>{item.headline}</h2>
+                      <p>{item.summary}</p>
+                    </div>
+                    <button className="story-action" type="button" onClick={() => handleWhy(item.id)}>
+                      Why it matters
+                    </button>
+                    {whyMap[item.id] && <div className="why-answer">{whyMap[item.id]}</div>}
+                    <button
+                      className="story-action"
+                      type="button"
+                      onClick={() => handleFeedback(item.id, "up")}
+                      aria-label="Mark this story relevant"
+                    >
+                      Relevant
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
 
-          <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 p-1.5 rounded-full border border-white/50 backdrop-blur-xl bg-[#f1dece]/75 dark:bg-[#2d201e]/80 shadow-xl">
-            {nav.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-extrabold transition ${
-                  tab === id ? "bg-[#fff9f3] text-[#241b17] shadow" : "opacity-80 hover:opacity-100"
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{label}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
+          {tab === "mood" && mood && (
+            <>
+              <div className="app-heading">
+                <h1>Market mood</h1>
+                <div className="mood-chip">
+                  <span>Current index</span>
+                  <strong>{mood.index}</strong>
+                </div>
+              </div>
+              <div className="mood-grid">
+                <div className="metric-cell"><span>Polarity</span><strong>{mood.polarity.toFixed(2)}</strong></div>
+                <div className="metric-cell"><span>Breadth</span><strong>{Math.round(mood.breadth * 100)}%</strong></div>
+                <div className="metric-cell"><span>Momentum</span><strong>{Math.round(mood.momentum * 100)}%</strong></div>
+                <div className="metric-cell"><span>Dispersion</span><strong>{Math.round(mood.dispersion * 100)}%</strong></div>
+              </div>
+            </>
+          )}
+
+          {tab === "portfolio" && me && (
+            <>
+              <div className="app-heading">
+                <h1>Your portfolio lens.</h1>
+                {feedData?.portfolio_mood && (
+                  <div className="mood-chip">
+                    <span>Portfolio mood</span>
+                    <strong>{feedData.portfolio_mood.score.toFixed(2)}</strong>
+                  </div>
+                )}
+              </div>
+              <div className="portfolio-grid">
+                <div className="metric-cell">
+                  <span>Manual holding</span>
+                  <form className="ask-form" onSubmit={searchInstruments} style={{ marginTop: 24 }}>
+                    <input
+                      value={instrumentQuery}
+                      onChange={(event) => setInstrumentQuery(event.target.value)}
+                      placeholder="Search symbol or name"
+                      aria-label="Search instruments"
+                    />
+                    <button className="story-action" type="submit" aria-label="Search instruments"><Search size={16} /></button>
+                  </form>
+                  <div style={{ marginTop: 8 }}>
+                    <label htmlFor="weight" style={{ fontSize: 12, fontWeight: 800 }}>Weight percent</label>
+                    <input
+                      id="weight"
+                      className="auth-field"
+                      type="number"
+                      min="0.01"
+                      max="100"
+                      step="0.01"
+                      value={portfolioWeight}
+                      onChange={(event) => setPortfolioWeight(event.target.value)}
+                    />
+                  </div>
+                  {instrumentResults.map((instrument: any) => (
+                    <button
+                      className="story-action"
+                      type="button"
+                      key={instrument.symbol}
+                      onClick={() => addHolding(instrument.symbol)}
+                      style={{ margin: "6px 6px 0 0" }}
+                    >
+                      {instrument.symbol} · {instrument.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="metric-cell">
+                  <span>Import CSV</span>
+                  <label className="story-action" style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 24, cursor: "pointer" }}>
+                    <Upload size={16} />
+                    Choose file
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(event) => importCsv(event.target.files?.[0])}
+                      style={{ position: "absolute", opacity: 0, width: 1, height: 1 }}
+                    />
+                  </label>
+                </div>
+                {(me.holdings || []).map((holding: any) => (
+                  <div className="portfolio-row" key={holding.s}>
+                    <span>{holding.s}</span>
+                    <strong>{holding.w}%</strong>
+                  </div>
+                ))}
+              </div>
+
+              {taxonomyTopics.length > 0 && (
+                <form className="brief-panel" onSubmit={savePreferences} style={{ marginTop: 12 }}>
+                  <div className="metric-cell" style={{ minHeight: 120 }}>
+                    <span>Interests</span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 20 }}>
+                      {taxonomyTopics.map((topic: string) => (
+                        <label key={topic} className="story-action" style={{ display: "inline-flex", alignItems: "center" }}>
+                          <input
+                            type="checkbox"
+                            name={`topic-${topic}`}
+                            defaultChecked={Boolean(me.interests?.[topic])}
+                            style={{ marginRight: 7 }}
+                          />
+                          {topic}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="submit" className="primary-button" style={{ width: "fit-content" }}>
+                    Save preferences
+                  </button>
+                </form>
+              )}
+            </>
+          )}
+
+          {tab === "brief" && (
+            <>
+              <div className="app-heading">
+                <h1>Brief and ask.</h1>
+              </div>
+              <div className="brief-panel">
+                <button className="primary-button" type="button" onClick={handleBrief} style={{ width: "fit-content" }}>
+                  Generate daily brief
+                </button>
+                {brief && (
+                  <div className="brief-output">
+                    <strong>{brief.line}</strong>
+                    {brief.divergence && <p>{brief.divergence}</p>}
+                  </div>
+                )}
+                <form className="ask-form" onSubmit={handleAsk}>
+                  <input
+                    value={askQ}
+                    onChange={(event) => setAskQ(event.target.value)}
+                    placeholder="Ask about your portfolio or the current feed"
+                    maxLength={500}
+                  />
+                  <button className="primary-button" type="submit">Ask Feedz</button>
+                </form>
+                {askRes && <div className="ask-output">{askRes.answer}</div>}
+              </div>
+            </>
+          )}
+        </section>
       </div>
-    </div>
+    </main>
   );
 }
